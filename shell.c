@@ -104,7 +104,7 @@ int get_number(char *command){
 /* update logs on computer */
 void write_logs(void *pvParameter){
 
-    for(int i = 0; i<LOG_SIZE; i++){
+    for(int i = 0; i<log_index; i++){
         char port[1];
         switch(port_actions[i].port){
             case UART_NUM_0: 
