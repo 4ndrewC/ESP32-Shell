@@ -21,14 +21,12 @@
 #define BUF_SIZE 256 // number of bytes
 #define LOG_SIZE 10
 
+#define MAX_TASK 24
 
 #define PINS 40
 
-#define PIN_INDEX pin_index[pin]
-#define PORT_INDEX port_index[port]
 
 
-int task_hp = 0;
 int log_index = 0;
 
 typedef enum{
@@ -60,23 +58,11 @@ typedef struct{
 } action_t;
 
 uint8_t pinstate[PINS+1];
-
-uint8_t pin_index[PINS+1];
-
 action_t port_actions[LOG_SIZE];
 
 SemaphoreHandle_t write_logs_semaphore;
 
 /* storing pin data */
-// void store(uint32_t compressed[], uint32_t data[], int length, io_type type){
-//     int div = 1;
-//     if(type==IO_CHAR || type==IO_U8) div = 4;
-//     else if(type==IO_SHORT || type==IO_U16) div = 2;
-//     for(int i = 0; i<length/div; i++){
-//         compressed[i] = data[i];
-//     }
-// }
-
 void store(uint32_t compressed[], void *input, int length){
     uint32_t *data = (uint32_t *)input;
     int div = 4/sizeof(input[0]);
@@ -108,9 +94,16 @@ void strip(char *str) {
     str[j] = '\0';
 }
 
+int get_number(char *command){
+    while (*command && !isdigit((unsigned char)*command)) command++;
+    int pin = strtol(command, NULL, 10);
+    return pin;
+}
+
 
 /* update logs on computer */
 void write_logs(void *pvParameter){
+
     for(int i = 0; i<LOG_SIZE; i++){
         char port[1];
         switch(port_actions[i].port){
@@ -168,23 +161,26 @@ void write_logs(void *pvParameter){
     vTaskDelete(NULL);
 }
 
+/* clear temp logs */
+void logs_clear(){
+    for(int i = 0; i<LOG_SIZE; i++) memset(port_actions[i].buff, 0, BUF_SIZE/4);
+    log_index = 0;
+}
 
 void port_write(uart_port_t s_port, void *buff, int length, comm_type commtype, io_type iotype){
 
     // this forces write_logs() to finish before resuming current task
-    write_logs_semaphore = xSemaphoreCreateBinary();
+    
 
     if(commtype==UART){
         uint32_t *data = buff;
 
         /* write to computer logs if temp log is filled up */
         if(log_index==LOG_SIZE){
-            xTaskCreate(&write_logs, "log the logs", STACK_SIZE, NULL, task_hp+1, NULL);
-
+            xTaskCreate(&write_logs, "log the logs", 1024, NULL, MAX_TASK, NULL);
+            // write_logs_semaphore = xSemaphoreCreateBinary();
             xQueueSemaphoreTake(write_logs_semaphore, portMAX_DELAY); // wait for temp logs to be sent first         
-            log_index = 0;
-
-            for(int i = 0; i<LOG_SIZE; i++) memset(port_actions[i].buff, 0, BUF_SIZE/4);
+            logs_clear();
         }
         
 
@@ -205,6 +201,13 @@ void port_write(uart_port_t s_port, void *buff, int length, comm_type commtype, 
     }
 }
 
+// for specific port logs, computer side will parse the data
+void port_logs(char *command){
+    xTaskCreate(&write_logs, "log the logs", 1024, NULL, MAX_TASK, NULL);
+    xQueueSemaphoreTake(write_logs_semaphore, portMAX_DELAY);
+    logs_clear();
+}
+
 /* tracks pin direction per enable/disable */
 int get_pin_dir(int pin){
     int enabled = -1;
@@ -220,7 +223,7 @@ int get_pin_dir(int pin){
 
 /* pin state command */
 void pindir(char *command){
-    if(memcmp(command, "pindir -a", 9)==0){
+    if(strlen(command)==9 && memcmp(command, "pindir -a", 9)==0){
         for(int i = 0; i<PINS; i++){
             char *state = pinstate[i]==1 ? "output" : "input";
             printf("pin %d: %s\n", i, state);
@@ -228,13 +231,11 @@ void pindir(char *command){
         return;
     }
 
-    while (*command && !isdigit((unsigned char)*command)) command++;
-    int pin = strtol(command, NULL, 10);
+    int pin = get_number(command);
     int ret = get_pin_dir(pin);
     char *state = ret ? "output" : "input";
     printf("%s\n", state);
 }
-
 
 
 void command_read(void *pvParameter){
@@ -253,7 +254,14 @@ void command_read(void *pvParameter){
         else if(memcmp(buff, "pindir", 6)==0){
             pindir(buff);
         }
+        else if(memcmp(buff, "port logs", 9)==0){
+            port_logs(buff);
+        }
 
         vTaskDelay(pdMS_TO_TICKS(100));
     }
+}
+
+void shell_init(){
+    write_logs_semaphore = xSemaphoreCreateBinary();
 }
