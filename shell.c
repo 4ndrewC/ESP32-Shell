@@ -26,7 +26,6 @@
 #define PINS 40
 
 
-
 int log_index = 0;
 
 typedef enum{
@@ -166,38 +165,63 @@ void logs_clear(){
     log_index = 0;
 }
 
-void port_write(uart_port_t s_port, void *buff, int length, comm_type commtype, io_type iotype){
+
+void uart_write(uart_port_t s_port, void *buff, int length, io_type iotype){
 
     // this forces write_logs() to finish before resuming current task
+    uint32_t *data = buff;
+
+    /* write to computer logs if temp log is filled up */
+    if(log_index==LOG_SIZE){
+        xTaskCreate(&write_logs, "log the logs", 1024, NULL, MAX_TASK, NULL);
+        // write_logs_semaphore = xSemaphoreCreateBinary();
+        xQueueSemaphoreTake(write_logs_semaphore, portMAX_DELAY); // wait for temp logs to be sent first         
+        logs_clear();
+    }
     
 
-    if(commtype==UART){
-        uint32_t *data = buff;
+    port_actions[log_index].port = s_port;
+    port_actions[log_index].io = 1;
+    port_actions[log_index].dtype = iotype;
+    port_actions[log_index].comm = UART;
+    
+    // this is to make sure the data sent fits perfectly into multiples of 32-bits
+    int mod = length%4;
+    port_actions[log_index].length = length+mod;
 
-        /* write to computer logs if temp log is filled up */
-        if(log_index==LOG_SIZE){
-            xTaskCreate(&write_logs, "log the logs", 1024, NULL, MAX_TASK, NULL);
-            // write_logs_semaphore = xSemaphoreCreateBinary();
-            xQueueSemaphoreTake(write_logs_semaphore, portMAX_DELAY); // wait for temp logs to be sent first         
-            logs_clear();
-        }
-        
+    store(port_actions[log_index].buff, data, length);
 
-        port_actions[log_index].port = s_port;
-        port_actions[log_index].io = 1;
-        port_actions[log_index].dtype = iotype;
-        port_actions[log_index].comm = UART;
-        
-        // this is to make sure the data sent fits perfectly into multiples of 32-bits
-        int mod = length%4;
-        port_actions[log_index].length = length+mod;
+    log_index++;
 
-        store(port_actions[log_index].buff, data, length);
+    uart_write_bytes(s_port, (const uint8_t *)buff, length);
+}
 
-        log_index++;
+/* ------------ UNTESTED --------------*/
+void uart_read(uart_port_t s_port, void *buff, int length, io_type iotype, TickType_t ticks_to_wait){
 
-        uart_write_bytes(s_port, (const uint8_t *)buff, length);
+    int ret = uart_read_bytes(s_port, buff, length, ticks_to_wait);
+    if(ret==ESP_FAIL) printf("uart failed to read\n");
+
+    uint32_t *data = buff;
+
+    if(log_index==LOG_SIZE){
+        xTaskCreate(&write_logs, "log the logs", 1024, NULL, MAX_TASK, NULL);
+        // write_logs_semaphore = xSemaphoreCreateBinary();
+        xQueueSemaphoreTake(write_logs_semaphore, portMAX_DELAY); // wait for temp logs to be sent first         
+        logs_clear();
     }
+
+    port_actions[log_index].port = s_port;
+    port_actions[log_index].io = 0;
+    port_actions[log_index].dtype = iotype;
+    port_actions[log_index].comm = UART;
+
+    int mod = length%4;
+    port_actions[log_index].length = length+mod;
+
+    store(port_actions[log_index].buff, data, length);
+
+    log_index++;
 }
 
 // for specific port logs, computer side will parse the data
@@ -243,8 +267,8 @@ void command_read(void *pvParameter){
         memset(buff, 0, MAX_READ_BUF_SIZE);
         int ret = 0;
         ret = uart_read_bytes(UART_NUM_0, (uint8_t*)buff, MAX_READ_BUF_SIZE, pdMS_TO_TICKS(500));
-        if(ret) printf("uart read success: %s\n", buff);
-
+        if(ret==ESP_FAIL) printf("uart failed to read\n");
+        // uart_read(UART_NUM_0, buff, MAX_READ_BUF_SIZE, IO_CHAR, pdMS_TO_TICKS(500));
         /*freaky command parsing*/
         strip(buff);
         if(memcmp(buff, "uart", 4)==0){
