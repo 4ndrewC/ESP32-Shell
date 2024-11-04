@@ -105,21 +105,20 @@ int get_number(char *command){
 void write_logs(void *pvParameter){
 
     for(int i = 0; i<log_index; i++){
-        char port[1];
+        char *port = (char *)malloc(sizeof(char));
         switch(port_actions[i].port){
             case UART_NUM_0: 
-                port[0] = '0'; break;
+                port = "0"; break;
             case UART_NUM_1: 
-                port[0] = '1'; break;
+                port = "1"; break;
             case UART_NUM_2: 
-                port[0] = '2'; break;
+                port = "2"; break;
             case UART_NUM_MAX: 
-                port[0] = '3'; break;
+                port = "3"; break;
         }
 
-        char io[1];
-
-        io[0] = port_actions[i].io==1 ? '1' : '0';
+        char *io = (char *)malloc(sizeof(char));
+        io = port_actions[i].io == 1 ? "1" : "0";
 
         char *dtype = (char *)malloc(5*sizeof(char));
         switch(port_actions[i].dtype){
@@ -142,19 +141,19 @@ void write_logs(void *pvParameter){
         char *comm = (char *)malloc(4*sizeof(char));
         comm = port_actions[i].comm == UART ? "uart" : (port_actions[i].comm == I2C ? "i2c" : "spi");
         
-        char length[6];
-        snprintf(length, 6, "%d", port_actions[i].length);
+        char *length = (char *)malloc(BUF_SIZE*sizeof(char));
+        snprintf(length, BUF_SIZE, "%d", port_actions[i].length);
         
         char *data = (char *)malloc(port_actions[i].length*sizeof(char));
         data = (char *)port_actions[i].buff;
 
-        strcat(data, port);
-        strcat(data, io);
-        strcat(data, dtype);
-        strcat(data, comm);
-        strcat(data, length);
+        strcat(length, port);
+        strcat(length, io);
+        strcat(length, dtype);
+        strcat(length, comm);
+        strcat(length, data);
         char header[BUF_SIZE+15] = "!send ";
-        strcat(header, data);
+        strcat(header, length);
         uart_write_bytes(UART_NUM_0, (const uint8_t *)header, BUF_SIZE+15);
     }
     xSemaphoreGive(write_logs_semaphore);
