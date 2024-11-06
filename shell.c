@@ -28,8 +28,7 @@
 
 #define PINS 40
 
-
-int log_index;
+#define MAX_TASKS 100
 
 typedef enum{
     IO_INT,
@@ -59,6 +58,17 @@ typedef struct{
 
 } action_t;
 
+typedef struct {
+    char *task_name;
+    // uint32_t stack_depth;
+    unsigned long priority;
+} task_log_t;
+
+int task_index;
+task_log_t task_log[MAX_TASKS];
+uint8_t task_active[MAX_TASKS];
+
+int log_index;
 uint8_t pinstate[PINS+1];
 action_t port_actions[LOG_SIZE];
 
@@ -231,20 +241,10 @@ void uart_read(uart_port_t s_port, void *buff, int length, io_type iotype, TickT
 }
 
 // ------------ WORK ON THIS -------------------
-#define MAX_TASKS 100
-
-typedef struct {
-    char *task_name;
-    // uint32_t stack_depth;
-    unsigned long priority;
-} task_log_t;
-
-int task_index;
-task_log_t task_log[MAX_TASKS];
-uint8_t task_active[MAX_TASKS];
 
 /* trying something cringe */
 #define log_tasks 1
+
 #ifdef log_tasks
 #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
 #define vTaskDelete(task) delete_task(task)
