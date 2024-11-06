@@ -12,21 +12,24 @@
 #include "esp_system.h"
 #include "esp_log.h"
 #include "esp_task_wdt.h"
+#include "freertos/projdefs.h"
 
 #include "soc/gpio_reg.h"
 #include "soc/io_mux_reg.h"
 
+#include "freertos/task.h"
+
 #define MAX_READ_BUF_SIZE 256
 #define MAX_WRITE_BUF_SIZE 256
-#define BUF_SIZE 256 // number of bytes
+#define BUF_SIZE 256
 #define LOG_SIZE 10
 
-#define MAX_TASK 24
+#define MAX_TASK_P 23 // for shell functions, reserve 24 for functions like list tasks
 
 #define PINS 40
 
 
-int log_index = 0;
+int log_index;
 
 typedef enum{
     IO_INT,
@@ -165,6 +168,15 @@ void logs_clear(){
     log_index = 0;
 }
 
+// for specific port logs, computer side will parse the data
+void port_logs(){
+    #undef xTaskCreate
+    xTaskCreate(&write_logs, "log the logs", 1024, NULL, MAX_TASK_P, NULL);
+    xQueueSemaphoreTake(write_logs_semaphore, portMAX_DELAY); // wait for temp logs to be sent first
+    logs_clear();
+    #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
+}
+
 
 void uart_write(uart_port_t s_port, void *buff, int length, io_type iotype){
 
@@ -173,10 +185,7 @@ void uart_write(uart_port_t s_port, void *buff, int length, io_type iotype){
 
     /* write to computer logs if temp log is filled up */
     if(log_index==LOG_SIZE){
-        xTaskCreate(&write_logs, "log the logs", 1024, NULL, MAX_TASK, NULL);
-        // write_logs_semaphore = xSemaphoreCreateBinary();
-        xQueueSemaphoreTake(write_logs_semaphore, portMAX_DELAY); // wait for temp logs to be sent first         
-        logs_clear();
+        port_logs();
     }
     
 
@@ -205,10 +214,7 @@ void uart_read(uart_port_t s_port, void *buff, int length, io_type iotype, TickT
     uint32_t *data = buff;
 
     if(log_index==LOG_SIZE){
-        xTaskCreate(&write_logs, "log the logs", 1024, NULL, MAX_TASK, NULL);
-        // write_logs_semaphore = xSemaphoreCreateBinary();
-        xQueueSemaphoreTake(write_logs_semaphore, portMAX_DELAY); // wait for temp logs to be sent first         
-        logs_clear();
+        port_logs();
     }
 
     port_actions[log_index].port = s_port;
@@ -224,12 +230,76 @@ void uart_read(uart_port_t s_port, void *buff, int length, io_type iotype, TickT
     log_index++;
 }
 
-// for specific port logs, computer side will parse the data
-void port_logs(char *command){
-    xTaskCreate(&write_logs, "log the logs", 1024, NULL, MAX_TASK, NULL);
-    xQueueSemaphoreTake(write_logs_semaphore, portMAX_DELAY);
-    logs_clear();
+// ------------ WORK ON THIS -------------------
+#define MAX_TASKS 100
+
+typedef struct {
+    char *task_name;
+    // uint32_t stack_depth;
+    unsigned long priority;
+} task_log_t;
+
+int task_index;
+task_log_t task_log[MAX_TASKS];
+uint8_t task_active[MAX_TASKS];
+
+/* trying something cringe */
+#define log_tasks 1
+#ifdef log_tasks
+#define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
+#define vTaskDelete(task) delete_task(task)
+#endif
+
+void create_task(TaskFunction_t pxTaskCode, const char * const pcName, const configSTACK_DEPTH_TYPE usStackDepth, void * const pvParameters, UBaseType_t uxPriority, TaskHandle_t * const pxCreatedTask){
+    if(task_index>=MAX_TASKS){
+        ESP_LOGI("TAG", "Max task limit reached");
+        return;
+    }
+    #undef xTaskCreate
+    xTaskCreate(pxTaskCode, pcName, usStackDepth, pvParameters, uxPriority, pxCreatedTask);
+    // log tasks here
+    ESP_LOGI("TAG", "Task %s created through pseudo function\n", pcName);
+    task_log[task_index].task_name = pcName;
+    // task_log[task_index].stack_depth = usStackDepth;
+    task_log[task_index].priority = uxPriority;
+    task_active[task_index] = 1;
+    task_index++;
+    #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
 }
+
+void delete_task(TaskHandle_t task){
+    #undef vTaskDelete
+    ESP_LOGI("TAG", "Task deleted through pseudo function\n");
+    // unlog task
+    TaskHandle_t cur_task = task==NULL? xTaskGetCurrentTaskHandle() : task;
+    char *name = pcTaskGetName(cur_task);
+    UBaseType_t priority = uxTaskPriorityGet(cur_task);
+    // search for the one with that name and priority
+    for(int i = 0; i<MAX_TASKS; i++){
+        if(strcmp(name, task_log[i].task_name)==0 && priority==task_log[i].priority){
+            task_active[task_index] = 0;
+            break;
+        }
+    }
+    vTaskDelete(task);
+    #define vTaskDelete(task) delete_task(task)
+}
+
+/* show all tasks */
+void task_list(void *pvParameter){
+    ESP_LOGI("TAG", "cringe\n");
+    
+    // send all active tasks
+    for(int i = 0; i<MAX_TASKS; i++){
+        if(!task_active[i]) continue;
+        ESP_LOGI("TAG", "%s", task_log[i].task_name);
+    }
+    #undef vTaskDelete
+    vTaskDelete(NULL);
+    #define vTaskDelete(task) delete_task(task)
+}
+
+// ---------------------------------------------
 
 /* tracks pin direction per enable/disable */
 int get_pin_dir(int pin){
@@ -278,7 +348,12 @@ void command_read(void *pvParameter){
             pindir(buff);
         }
         else if(memcmp(buff, "port logs", 9)==0){
-            port_logs(buff);
+            port_logs();
+        }
+        else if(memcmp(buff, "task list", 9)==0){
+            #undef xTaskCreate
+            xTaskCreate(task_list, "task_list", 2048, NULL, MAX_TASK_P+1, NULL);
+            #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
         }
 
         vTaskDelay(pdMS_TO_TICKS(100));
@@ -287,4 +362,10 @@ void command_read(void *pvParameter){
 
 void shell_init(){
     write_logs_semaphore = xSemaphoreCreateBinary();
+    task_index = 0;
+    log_index = 0;
+
+    #undef xTaskCreate
+    xTaskCreate(&command_read, "command_read", 2048, NULL, 5, NULL);
+    #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
 }
