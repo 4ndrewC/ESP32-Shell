@@ -64,9 +64,6 @@ typedef struct {
     unsigned long priority;
 } task_log_t;
 
-int task_index;
-task_log_t task_log[MAX_TASKS];
-uint8_t task_active[MAX_TASKS];
 
 int log_index;
 uint8_t pinstate[PINS+1];
@@ -190,17 +187,14 @@ void port_logs(){
 
 void uart_write(uart_port_t s_port, void *buff, int length, io_type iotype){
 
-    // this forces write_logs() to finish before resuming current task
     uint32_t *data = buff;
 
     /* write to computer logs if temp log is filled up */
-    if(log_index==LOG_SIZE){
-        port_logs();
-    }
+    if(log_index==LOG_SIZE) port_logs();
     
 
     port_actions[log_index].port = s_port;
-    port_actions[log_index].io = 1;
+    port_actions[log_index].io = 0;
     port_actions[log_index].dtype = iotype;
     port_actions[log_index].comm = UART;
     
@@ -223,12 +217,10 @@ void uart_read(uart_port_t s_port, void *buff, int length, io_type iotype, TickT
 
     uint32_t *data = buff;
 
-    if(log_index==LOG_SIZE){
-        port_logs();
-    }
+    if(log_index==LOG_SIZE) port_logs();
 
     port_actions[log_index].port = s_port;
-    port_actions[log_index].io = 0;
+    port_actions[log_index].io = 1;
     port_actions[log_index].dtype = iotype;
     port_actions[log_index].comm = UART;
 
@@ -242,6 +234,16 @@ void uart_read(uart_port_t s_port, void *buff, int length, io_type iotype, TickT
 
 // ------------ WORK ON THIS -------------------
 
+/* 
+to do:
+- uart write instead of just esp log info
+*/
+
+int task_index;
+task_log_t task_log[MAX_TASKS];
+uint8_t next_task[MAX_TASKS];
+uint8_t task_active[MAX_TASKS];
+
 /* trying something cringe */
 #define log_tasks 1
 
@@ -249,6 +251,13 @@ void uart_read(uart_port_t s_port, void *buff, int length, io_type iotype, TickT
 #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
 #define vTaskDelete(task) delete_task(task)
 #endif
+
+int get_next_task(){
+    for(int i = 0; i<MAX_TASKS; i++){
+        if(!task_active[i]) return i;
+    }
+    return 0;
+}
 
 void create_task(TaskFunction_t pxTaskCode, const char * const pcName, const configSTACK_DEPTH_TYPE usStackDepth, void * const pvParameters, UBaseType_t uxPriority, TaskHandle_t * const pxCreatedTask){
     if(task_index>=MAX_TASKS){
@@ -259,11 +268,12 @@ void create_task(TaskFunction_t pxTaskCode, const char * const pcName, const con
     xTaskCreate(pxTaskCode, pcName, usStackDepth, pvParameters, uxPriority, pxCreatedTask);
     // log tasks here
     ESP_LOGI("TAG", "Task %s created through pseudo function\n", pcName);
-    task_log[task_index].task_name = pcName;
-    // task_log[task_index].stack_depth = usStackDepth;
-    task_log[task_index].priority = uxPriority;
-    task_active[task_index] = 1;
-    task_index++;
+    int next = get_next_task(); // get next available task index
+    task_log[next].task_name = pcName;
+    // task_log[next].stack_depth = usStackDepth;
+    task_log[next].priority = uxPriority;
+    task_active[next] = 1;
+    if(next>task_index) task_index = next;
     #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
 }
 
@@ -277,7 +287,7 @@ void delete_task(TaskHandle_t task){
     // search for the one with that name and priority
     for(int i = 0; i<MAX_TASKS; i++){
         if(strcmp(name, task_log[i].task_name)==0 && priority==task_log[i].priority){
-            task_active[task_index] = 0;
+            task_active[i] = 0;
             break;
         }
     }
