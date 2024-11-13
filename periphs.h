@@ -7,21 +7,7 @@
 #include <ctype.h>
 #include <stdint.h>
 
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-
-#include "driver/gpio.h"
 #include "driver/uart.h"
-#include "driver/i2c.h"
-#include "esp_system.h"
-#include "esp_log.h"
-#include "esp_task_wdt.h"
-#include "freertos/projdefs.h"
-
-#include "soc/gpio_reg.h"
-#include "soc/io_mux_reg.h"
-
-#include "freertos/task.h"
 
 
 #define MAX_READ_BUF_SIZE 255
