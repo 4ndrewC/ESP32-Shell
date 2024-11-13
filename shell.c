@@ -1,4 +1,5 @@
 #include "periphs.h"
+#include "shell.h"
 
 int log_index;
 uint8_t pinstate[PINS+1];
@@ -44,8 +45,56 @@ int get_number(char *command){
     return pin;
 }
 
+// ------------------ FIX --------------------
+// before calling this function, convert the buffer to a union type array
+typedef union {
+    int i;
+    float f;
+    short s;
+    char c;
+    uint32_t u32;
+    uint16_t u16;
+    uint8_t u8;
+} u_type;
+
+void convert_to_string(void* data, char *output, int length, io_type type){
+    
+    for(int i = 0; i<length; i++){
+        char cur[33];
+        if(type==IO_INT){
+            int *temp = data;
+            snprintf(cur, sizeof(cur), "%d", temp[i]);
+        }
+        else if(type==IO_CHAR){
+            char *temp = data;
+            snprintf(cur, sizeof(cur), "%c", temp[i]);
+        }
+        else if(type==IO_SHORT){
+            short *temp = data;
+            snprintf(cur, sizeof(cur), "%d", temp[i]);
+        }
+        else if(type==IO_FLOAT){
+            float *temp = data;
+            snprintf(cur, sizeof(cur), "%f", temp[i]);
+        }
+        else if(type==IO_U32){
+            uint32_t *temp = data;
+            snprintf(cur, sizeof(cur), "%d" PRIu32, temp[i]);
+        }
+        else if(type==IO_U16){
+            uint16_t *temp = data;
+            snprintf(cur, sizeof(cur), "%u" PRIu16, temp[i]);
+        }
+        else if(type==IO_U8){
+            uint8_t *temp = data;
+            snprintf(cur, sizeof(cur), "%u" PRIu8, temp[i]);
+        }
+        strcat(output, cur);
+    }
+} 
 
 /* update logs on computer */
+// FIX, NEEDS TO SUPPORT ALL DATA TYPES
 void write_serial_logs(void *pvParameter){
 
     for(int i = 0; i<log_index; i++){
@@ -65,6 +114,7 @@ void write_serial_logs(void *pvParameter){
         io = port_actions[i].io == 1 ? "1" : "0";
 
         char *dtype = (char *)malloc(5*sizeof(char));
+        // char data[32];
         switch(port_actions[i].dtype){
             case IO_INT: 
                 dtype = "int"; break;
@@ -90,7 +140,7 @@ void write_serial_logs(void *pvParameter){
         
         char *data = (char *)malloc(port_actions[i].length*sizeof(char));
         data = (char *)port_actions[i].buff;
-
+        
         strcat(length, port);
         strcat(length, io);
         strcat(length, dtype);
@@ -104,6 +154,13 @@ void write_serial_logs(void *pvParameter){
     vTaskDelete(NULL);
 }
 
+#if (debugger == 1)
+    void write_serial_logs_debugger(void *pvParameter){
+
+        xSemaphoreGive(write_logs_semaphore);
+        vTaskDelete(NULL);
+    }
+#endif
 
 /* clear temp logs */
 void serial_logs_clear(){
@@ -120,8 +177,18 @@ void port_logs(){
     #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
 }
 
+#if (debugger == 1)
+    void port_logs_debugger(){
+        #undef xTaskCreate
+        xTaskCreate(&write_serial_logs_debugger, "debug the serials", 1024, NULL, MAX_TASK_P, NULL);
+        xQueueSemaphoreTake(write_logs_semaphore, portMAX_DELAY); // wait for temp logs to be sent first
+        serial_logs_clear();
+        #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
+    }
+#endif
 
-void uart_write(uart_port_t s_port, void *buff, int length, io_type iotype){
+/* wrapper for uart write */
+int uart_write(uart_port_t s_port, void *buff, int length, io_type iotype){
 
     uint32_t *data = buff;
 
@@ -136,13 +203,40 @@ void uart_write(uart_port_t s_port, void *buff, int length, io_type iotype){
     
     // this is to make sure the data sent fits perfectly into multiples of 32-bits
     int mod = length%4;
-    port_actions[log_index].length = length+mod;
+    port_actions[log_index].length = length+(4-mod);
 
-    store(port_actions[log_index].buff, data, length);
+    store(port_actions[log_index].buff, data, port_actions[log_index].length);
 
     log_index++;
 
-    uart_write_bytes(s_port, (const uint8_t *)buff, length);
+    return uart_write_bytes(s_port, (const uint8_t *)buff, length);
+}
+
+/* wrapper for i2c write */
+esp_err_t i2c_write(i2c_port_t s_port, uint8_t slave_addr, void *buff, int length, TickType_t ticks_to_wait, io_type iotype){
+
+    uint32_t *data = buff;
+
+    /* write to computer logs if temp log is filled up */
+    if(log_index==LOG_SIZE) port_logs();
+    
+
+    port_actions[log_index].port = s_port;
+    port_actions[log_index].io = 0;
+    port_actions[log_index].dtype = iotype;
+    port_actions[log_index].comm = I2C;
+    
+    // this is to make sure the data sent fits perfectly into multiples of 32-bits
+    int mod = length%4;
+    port_actions[log_index].length = length+(4-mod);
+    // port_actions[log_index].length = length;
+    
+
+    store(port_actions[log_index].buff, data, port_actions[log_index].length);
+
+    log_index++;
+
+    return i2c_master_write_to_device(s_port, slave_addr, data, sizeof(data), ticks_to_wait);
 }
 
 /* ------------ UNTESTED --------------*/
@@ -161,9 +255,9 @@ void uart_read(uart_port_t s_port, void *buff, int length, io_type iotype, TickT
     port_actions[log_index].comm = UART;
 
     int mod = length%4;
-    port_actions[log_index].length = length+mod;
+    port_actions[log_index].length = length+(4-mod);
 
-    store(port_actions[log_index].buff, data, length);
+    store(port_actions[log_index].buff, data, port_actions[log_index].length);
 
     log_index++;
 }
@@ -181,9 +275,8 @@ uint8_t next_task[MAX_TASKS];
 uint8_t task_active[MAX_TASKS];
 
 /* trying something cringe */
-#define log_tasks 1
 
-#ifdef log_tasks
+#if (log_tasks == 1)
 #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
 #define vTaskDelete(task) delete_task(task)
 #endif
@@ -308,11 +401,24 @@ void command_read(void *pvParameter){
     }
 }
 
+void init_uart(){
+    const uart_config_t uart_config = {
+        .baud_rate = 115200,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE
+    };
+    uart_param_config(UART_NUM_0, &uart_config);
+    uart_set_pin(UART_NUM_0, GPIO_NUM_1, GPIO_NUM_3, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    uart_driver_install(UART_NUM_0, MAX_READ_BUF_SIZE*2, 0, 0, NULL, 0);
+}
+
 void shell_init(){
     write_logs_semaphore = xSemaphoreCreateBinary();
     task_index = 0;
     log_index = 0;
-
+    init_uart();
     #undef xTaskCreate
     xTaskCreate(&command_read, "command_read", 2048, NULL, 5, NULL);
     #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
