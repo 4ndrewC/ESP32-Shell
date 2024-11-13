@@ -7,6 +7,7 @@
 
 #define debugger 0
 #define log_tasks 1
+#define log_serial 1
 
 /* 
  * Initializes ESP-32 Shell 
