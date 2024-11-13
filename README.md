@@ -17,4 +17,4 @@ e.g
 idf_component_register(SRCS "your_file.c" "path/to/shell.c" INCLUDE_DIRS ".")
 ```
 
-include "shell.h" in your C file
+Include "shell.h" in your C file
