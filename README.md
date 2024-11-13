@@ -9,7 +9,7 @@ A shell to interact with the current state of the hardware on the ESP32 microcon
 
 
 
-**How to use**
+# How to use
 
 When building using ESP-IDF, include "shell.c" as one of the idf component registers
 e.g
