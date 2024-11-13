@@ -36,8 +36,6 @@ int get_number(char *command){
     return pin;
 }
 
-// ------------------ FIX --------------------
-
 /* update logs on computer */
 
 /* 2 bytes for length, 1 byte for port, 1 byte for io,
@@ -126,10 +124,7 @@ void port_logs(){
     }
 #endif
 
-#if (log_serial == 1)
-#define uart_write_bytes(s_port, buff, length) uart_write(s_port, buff, length)
-#define i2c_master_write_to_device(s_port, slave_addr, data, length, ticks_to_wait) i2c_write(s_port, slave_addr, data, length, ticks_to_wait);
-#endif
+// ----------------- SERIAL LOGGING -----------------
 
 int uart_write(uart_port_t s_port, void *buff, int length){
     
@@ -222,12 +217,6 @@ task_log_t task_log[MAX_TASKS];
 uint8_t next_task[MAX_TASKS];
 uint8_t task_active[MAX_TASKS];
 
-/* trying something cringe */
-
-#if (log_tasks == 1)
-#define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
-#define vTaskDelete(task) delete_task(task)
-#endif
 
 int get_next_task(){
     for(int i = 0; i<MAX_TASKS; i++){
