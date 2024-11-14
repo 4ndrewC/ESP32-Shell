@@ -89,7 +89,10 @@ void write_serial_logs(void *pvParameter){
         #define uart_write_bytes(s_port, buff, length) uart_write(s_port, buff, length)
     }
     xSemaphoreGive(write_logs_semaphore);
+    #undef vTaskDelete
     vTaskDelete(NULL);
+    #define vTaskDelete(task) delete_task(task)
+
 }
 
 #if (debugger == 1)
