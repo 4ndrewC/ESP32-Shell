@@ -77,15 +77,12 @@ void write_serial_logs(void *pvParameter){
         uart_buff[index++] = port;
         uart_buff[index++] = io;
         while(*comm!='\0'){
-            uart_buff[index] = *comm;
-            index++;
+            uart_buff[index++] = *comm;
             comm++;
         } 
-        if(index==6) uart_buff[index] = '0';
-        index = 7;
+        if(index==6) uart_buff[index++] = '0';
         for(int i = 0; i<BUF_SIZE; i++){
-            uart_buff[index] = data[i];
-            index++; 
+            uart_buff[index++] = data[i];
         }
         #undef uart_write_bytes
         uart_write_bytes(UART_NUM_0, uart_buff, sizeof(uart_buff));
