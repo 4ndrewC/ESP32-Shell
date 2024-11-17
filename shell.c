@@ -44,6 +44,10 @@ void write_serial_logs(void *pvParameter){
 
     for(int i = 0; i<log_index; i++){
         uint8_t uart_buff[BUF_SIZE + 15];
+        
+        // header for serial log uart data
+        uart_buff[0] = 0x10;
+        uart_buff[1] = 0xFF;
 
         uint8_t port;
         switch(port_actions[i].port){
@@ -63,16 +67,15 @@ void write_serial_logs(void *pvParameter){
 
         char *comm = (char *)malloc(4*sizeof(char));
         comm = port_actions[i].comm == UART ? "uart" : (port_actions[i].comm == I2C ? "i2c" : "spi");
-        
         uint8_t length = port_actions[i].length;
+        // length = (uint8_t)sizeof(port_actions[i].buff);
         
         uint8_t *data = (uint8_t *)malloc(port_actions[i].length*sizeof(uint8_t));
         data = (uint8_t *)port_actions[i].buff;
-        
-        uart_buff[0] = length;
-        uart_buff[1] = port;
-        uart_buff[2] = io;
-        int index = 3;
+        int index = 2;
+        uart_buff[index++] = length;
+        uart_buff[index++] = port;
+        uart_buff[index++] = io;
         while(*comm!='\0'){
             uart_buff[index] = *comm;
             index++;
@@ -143,7 +146,7 @@ int uart_write(uart_port_t s_port, void *buff, int length){
     port_actions[log_index].comm = UART;
     
     // this is to make sure the data sent fits perfectly into multiples of 32-bits
-    int mod = length%4;
+    int mod = length%4!=0? length%4 : 4;
     port_actions[log_index].length = length+(4-mod);
 
     store(port_actions[log_index].buff, data, port_actions[log_index].length);
@@ -171,7 +174,7 @@ esp_err_t i2c_write(i2c_port_t s_port, uint8_t slave_addr, void *buff, int lengt
     port_actions[log_index].comm = I2C;
     
     // this is to make sure the data sent fits perfectly into multiples of 32-bits
-    int mod = length%4;
+    int mod = length%4!=0? length%4 : 4;
     port_actions[log_index].length = length+(4-mod);
     
 
