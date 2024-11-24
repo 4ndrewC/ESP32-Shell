@@ -43,11 +43,17 @@ int get_number(char *command){
 void write_serial_logs(void *pvParameter){
 
     for(int i = 0; i<log_index; i++){
-        uint8_t uart_buff[BUF_SIZE + 15];
+        uint8_t uart_buff[BUF_SIZE + 20];
         
         // header for serial log uart data
-        uart_buff[0] = 0x10;
-        uart_buff[1] = 0xFF;
+        int index = 0;
+        if(i==0){
+            uart_buff[index++] = 0x33;
+            uart_buff[index++] = 0x44;
+            uart_buff[index++] = 0x55;
+        }
+        uart_buff[index++] = 0x10;
+        uart_buff[index++] = 0xFF;
 
         uint8_t port;
         switch(port_actions[i].port){
@@ -65,27 +71,42 @@ void write_serial_logs(void *pvParameter){
 
         uint8_t io = port_actions[i].io;
 
-        char *comm = (char *)malloc(4*sizeof(char));
-        comm = port_actions[i].comm == UART ? "uart" : (port_actions[i].comm == I2C ? "i2c" : "spi");
+        // char *comm = (char *)malloc(4*sizeof(char));
+        // comm = port_actions[i].comm == UART ? "uart" : (port_actions[i].comm == I2C ? "i2c" : "spi");
+        uint8_t comm = port_actions[i].comm == UART ? 0: (port_actions[i].comm == I2C ? 1: 2);
         uint8_t length = port_actions[i].length;
         // length = (uint8_t)sizeof(port_actions[i].buff);
         
         uint8_t *data = (uint8_t *)malloc(port_actions[i].length*sizeof(uint8_t));
         data = (uint8_t *)port_actions[i].buff;
-        int index = 2;
         uart_buff[index++] = length;
         uart_buff[index++] = port;
         uart_buff[index++] = io;
-        while(*comm!='\0'){
-            uart_buff[index++] = *comm;
-            comm++;
-        } 
-        if(index==6) uart_buff[index++] = '0';
-        for(int i = 0; i<BUF_SIZE; i++){
+        uart_buff[index++] = comm;
+        // while(*comm!='\0'){
+        //     uart_buff[index++] = *comm;
+        //     comm++;
+        // } 
+        // if(index==6) uart_buff[index++] = '0';
+        for(int i = 0; i<length; i++){
             uart_buff[index++] = data[i];
         }
+        // ending sequence: 6f 70 70 61 69
+        uart_buff[index++] = 0x6F;
+        uart_buff[index++] = 0x70;
+        uart_buff[index++] = 0x70;
+        uart_buff[index++] = 0x61;
+        uart_buff[index++] = 0x69;
+
+        if(i==log_index-1){
+            uart_buff[index++] = 0x66;
+            uart_buff[index++] = 0x77;
+            uart_buff[index++] = 0x88;
+            uart_buff[index++] = 0x99;
+        }
+
         #undef uart_write_bytes
-        uart_write_bytes(UART_NUM_0, uart_buff, sizeof(uart_buff));
+        uart_write_bytes(UART_NUM_0, uart_buff, length+20);
         #define uart_write_bytes(s_port, buff, length) uart_write(s_port, buff, length)
     }
     xSemaphoreGive(write_logs_semaphore);
