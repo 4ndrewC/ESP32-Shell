@@ -7,6 +7,10 @@ action_t port_actions[LOG_SIZE];
 
 SemaphoreHandle_t write_logs_semaphore;
 
+char start_msg[7] = {0x73, 0x6b, 0x69, 0x62, 0x69, 0x64, 0x69};
+char end_msg[5] = {0x73, 0x69, 0x67, 0x6d, 0x61};
+
+
 /* storing serial data */
 void store(uint32_t compressed[], void *input, int length){
     uint32_t *data = (uint32_t *)input;
@@ -151,6 +155,13 @@ void port_logs(){
 
 // ----------------- SERIAL LOGGING -----------------
 
+int raw_uart_write(uart_port_t s_port, void *buff, int length){
+    #undef uart_write_bytes
+    int ret = uart_write_bytes(s_port, (const uint8_t *)buff, length);
+    #define uart_write_bytes(s_port, buff, length) uart_write(s_port, buff, length)
+    return ret;
+}
+
 int uart_write(uart_port_t s_port, void *buff, int length){
     
     uint32_t *data = buff;
@@ -291,13 +302,19 @@ void delete_task(TaskHandle_t task){
 
 /* show all tasks */
 void task_list(void *pvParameter){
-    ESP_LOGI("TAG", "cringe\n");
+    // ESP_LOGI("TAG", "cringe\n");
     
+    raw_uart_write(UART_NUM_0, start_msg, 7);
     // send all active tasks
     for(int i = 0; i<MAX_TASKS; i++){
         if(!task_active[i]) continue;
-        ESP_LOGI("TAG", "%s", task_log[i].task_name);
+        // ESP_LOGI("TAG", "%s", task_log[i].task_name);
+        char each[2] = {0x10, 0xFF};
+        raw_uart_write(UART_NUM_0, each, 2);
+        raw_uart_write(UART_NUM_0, task_log[i].task_name, strlen(task_log[i].task_name));
     }
+
+    raw_uart_write(UART_NUM_0, end_msg, 5);
     #undef vTaskDelete
     vTaskDelete(NULL);
     #define vTaskDelete(task) delete_task(task)
@@ -307,6 +324,84 @@ void task_list(void *pvParameter){
 
 // ---------------------------------------------
 
+// --------------- skibidi wifi ----------------
+#define WIFI_SSID ""
+#define WIFI_PASS ""
+
+void wifi_event_handler(void* arg, esp_event_base_t event_base,
+                        int32_t event_id, void* event_data) {
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        ESP_LOGI("TAG", "Wi-Fi started, connecting...");
+        esp_wifi_connect();
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        ESP_LOGW("TAG", "Disconnected, reconnecting...");
+        esp_wifi_connect();
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
+        ESP_LOGI("TAG", "Device IP: " IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI("TAG", "Gateway: " IPSTR, IP2STR(&event->ip_info.gw));
+    }
+}
+
+void ipconfig_info(void *pvParameters){
+    esp_netif_ip_info_t ip_info;
+    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF"); // Get the default Wi-Fi station interface
+
+    if (esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
+        ESP_LOGI("TAG", "Device IP Address: " IPSTR, IP2STR(&ip_info.ip));
+        ESP_LOGI("TAG", "Gateway IP Address: " IPSTR, IP2STR(&ip_info.gw));
+        ESP_LOGI("TAG", "Netmask: " IPSTR, IP2STR(&ip_info.netmask));
+    } else {
+        ESP_LOGE("TAG", "Failed to get IP info.");
+    }
+    wifi_config_t wifi_config;
+    if (esp_wifi_get_config(WIFI_IF_STA, &wifi_config) == ESP_OK) {
+        char ssid[33]; // SSID max length is 32 characters + null terminator
+        strncpy(ssid, (char *)wifi_config.sta.ssid, sizeof(ssid) - 1);
+        ssid[sizeof(ssid) - 1] = '\0'; // Ensure null termination
+        
+        ESP_LOGI("TAG", "Connected SSID: %s", ssid);
+    } else {
+        ESP_LOGE("TAG", "Failed to retrieve Wi-Fi configuration");
+    }
+    
+    #undef vTaskDelete
+    vTaskDelete(NULL);
+    #define vTaskDelete(task) delete_task(task)
+}
+
+void wifi_init_sta() {
+    ESP_LOGI("TAG", "Initializing Wi-Fi...");
+    
+    // Initialize the default station network interface
+    esp_netif_t *netif = esp_netif_create_default_wifi_sta();
+    assert(netif);
+
+    // Initialize Wi-Fi
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    // Register event handlers
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, NULL));
+
+    // Configure Wi-Fi connection
+    wifi_config_t wifi_config = {
+        .sta = {
+            .ssid = WIFI_SSID,
+            .password = WIFI_PASS,
+        },
+    };
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+}
+
+void wifi_status(char *command){
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, NULL));
+}
+
+// --------------------------------------------
 /* tracks pin direction per enable/disable */
 int get_pin_dir(int pin){
     int enabled = -1;
@@ -327,13 +422,17 @@ void pindir(char *command){
             char *state = pinstate[i]==1 ? "output" : "input";
             printf("pin %d: %s\n", i, state);
         }
-        return;
     }
-
-    int pin = get_number(command);
-    int ret = get_pin_dir(pin);
-    char *state = ret ? "output" : "input";
-    printf("%s\n", state);
+    else{
+        int pin = get_number(command);
+        int ret = get_pin_dir(pin);
+        char *state = ret ? "output" : "input";
+        printf("%s\n", state);
+    }
+    
+    #undef vTaskDelete
+    vTaskDelete(NULL);
+    #define vTaskDelete(task) delete_task(task)
 }
 
 
@@ -351,7 +450,10 @@ void command_read(void *pvParameter){
             printf("nah\n");
         }
         else if(memcmp(buff, "pindir", 6)==0){
-            pindir(buff);
+            // pindir(buff);
+            #undef xTaskCreate
+            xTaskCreate(pindir, "pindir", 2048, buff, MAX_TASK_P+1, NULL);
+            #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
         }
         else if(memcmp(buff, "port logs", 9)==0){
             port_logs();
@@ -361,8 +463,15 @@ void command_read(void *pvParameter){
             xTaskCreate(task_list, "task_list", 2048, NULL, MAX_TASK_P+1, NULL);
             #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
         }
+        else if(memcmp(buff, "ipconfig", 8)==0){
+            // wifi_status(buff);
+            #undef xTaskCreate
+            // ipconfig_info();
+            xTaskCreate(ipconfig_info, "ipconfig", 4096, NULL, MAX_TASK_P+1, NULL);
+            #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
+            // ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, NULL));
+        }
 
-        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -379,12 +488,20 @@ void init_uart(){
     uart_driver_install(UART_NUM_0, MAX_READ_BUF_SIZE*2, 0, 0, NULL, 0);
 }
 
+void init_wifi(){
+    ESP_ERROR_CHECK(nvs_flash_init());
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+}
+
 void shell_init(){
     write_logs_semaphore = xSemaphoreCreateBinary();
     task_index = 0;
     log_index = 0;
     init_uart();
+    init_wifi();
+    wifi_init_sta(); // temporary
     #undef xTaskCreate
-    xTaskCreate(&command_read, "command_read", 2048, NULL, 5, NULL);
+    xTaskCreate(&command_read, "command_read", 4096, NULL, 5, NULL);
     #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
 }
