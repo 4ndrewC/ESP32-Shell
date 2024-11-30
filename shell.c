@@ -20,6 +20,14 @@ void store(uint32_t compressed[], void *input, int length){
     }
 }
 
+void start_signal(){
+    raw_uart_write(UART_NUM_0, start_msg, 7);
+}
+
+void end_signal(){
+    raw_uart_write(UART_NUM_0, end_msg, 5);
+}
+
 
 /* helper for stripping left and right spaces from command reads */
 void strip(char *str) {
@@ -45,17 +53,18 @@ int get_number(char *command){
 /* 2 bytes for length, 1 byte for port, 1 byte for io,
    4 bytes for comm, 256 bytes for data*/
 void write_serial_logs(void *pvParameter){
-
+    char serial_start[3] = {0x33, 0x44, 0x55};
+    raw_uart_write(UART_NUM_0, serial_start, 3);
     for(int i = 0; i<log_index; i++){
         uint8_t uart_buff[BUF_SIZE + 20];
         
         // header for serial log uart data
         int index = 0;
-        if(i==0){
-            uart_buff[index++] = 0x33;
-            uart_buff[index++] = 0x44;
-            uart_buff[index++] = 0x55;
-        }
+        // if(i==0){
+        //     uart_buff[index++] = 0x33;
+        //     uart_buff[index++] = 0x44;
+        //     uart_buff[index++] = 0x55;
+        // }
         uart_buff[index++] = 0x10;
         uart_buff[index++] = 0xFF;
 
@@ -102,18 +111,21 @@ void write_serial_logs(void *pvParameter){
         uart_buff[index++] = 0x61;
         uart_buff[index++] = 0x69;
 
-        if(i==log_index-1){
-            uart_buff[index++] = 0x66;
-            uart_buff[index++] = 0x77;
-            uart_buff[index++] = 0x88;
-            uart_buff[index++] = 0x99;
-        }
+        // if(i==log_index-1){
+        //     uart_buff[index++] = 0x66;
+        //     uart_buff[index++] = 0x77;
+        //     uart_buff[index++] = 0x88;
+        //     uart_buff[index++] = 0x99;
+        // }
 
         #undef uart_write_bytes
         uart_write_bytes(UART_NUM_0, uart_buff, length+20);
         #define uart_write_bytes(s_port, buff, length) uart_write(s_port, buff, length)
     }
+    char serial_end[4] = {0x66, 0x77, 0x88, 0x99};
+    raw_uart_write(UART_NUM_0, serial_end, 4);
     xSemaphoreGive(write_logs_semaphore);
+
     #undef vTaskDelete
     vTaskDelete(NULL);
     #define vTaskDelete(task) delete_task(task)
@@ -137,7 +149,7 @@ void serial_logs_clear(){
 // for specific port logs, computer side will parse the data
 void port_logs(){
     #undef xTaskCreate
-    xTaskCreate(&write_serial_logs, "log the serials", 1024, NULL, MAX_TASK_P, NULL);
+    xTaskCreate(&write_serial_logs, "log the serials", 2048, NULL, MAX_TASK_P, NULL);
     xQueueSemaphoreTake(write_logs_semaphore, portMAX_DELAY); // wait for temp logs to be sent first
     serial_logs_clear();
     #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
@@ -243,10 +255,6 @@ int uart_read(uart_port_t s_port, void *buff, int length, TickType_t ticks_to_wa
 }
 
 // ---------- TASK LOGGING -----------
-/* 
-to do:
-- uart write instead of just esp log info
-*/
 
 int task_index;
 task_log_t task_log[MAX_TASKS];
@@ -303,8 +311,8 @@ void delete_task(TaskHandle_t task){
 /* show all tasks */
 void task_list(void *pvParameter){
     // ESP_LOGI("TAG", "cringe\n");
-    
-    raw_uart_write(UART_NUM_0, start_msg, 7);
+    // start sequence
+    start_signal();
     // send all active tasks
     for(int i = 0; i<MAX_TASKS; i++){
         if(!task_active[i]) continue;
@@ -313,20 +321,19 @@ void task_list(void *pvParameter){
         raw_uart_write(UART_NUM_0, each, 2);
         raw_uart_write(UART_NUM_0, task_log[i].task_name, strlen(task_log[i].task_name));
     }
-
-    raw_uart_write(UART_NUM_0, end_msg, 5);
+    // end sequence
+    end_signal();
+    
     #undef vTaskDelete
     vTaskDelete(NULL);
     #define vTaskDelete(task) delete_task(task)
 
-    xSemaphoreGive(write_logs_semaphore); // are you sure about this
+    xSemaphoreGive(write_logs_semaphore);
 }
 
 // ---------------------------------------------
 
 // --------------- skibidi wifi ----------------
-#define WIFI_SSID ""
-#define WIFI_PASS ""
 
 void wifi_event_handler(void* arg, esp_event_base_t event_base,
                         int32_t event_id, void* event_data) {
@@ -370,33 +377,6 @@ void ipconfig_info(void *pvParameters){
     #define vTaskDelete(task) delete_task(task)
 }
 
-void wifi_init_sta() {
-    ESP_LOGI("TAG", "Initializing Wi-Fi...");
-    
-    // Initialize the default station network interface
-    esp_netif_t *netif = esp_netif_create_default_wifi_sta();
-    assert(netif);
-
-    // Initialize Wi-Fi
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-
-    // Register event handlers
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, NULL));
-
-    // Configure Wi-Fi connection
-    wifi_config_t wifi_config = {
-        .sta = {
-            .ssid = WIFI_SSID,
-            .password = WIFI_PASS,
-        },
-    };
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
-}
-
 void wifi_status(char *command){
     ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, NULL));
 }
@@ -417,18 +397,25 @@ int get_pin_dir(int pin){
 
 /* pin state command */
 void pindir(char *command){
+    start_signal();
     if(strlen(command)==9 && memcmp(command, "pindir -a", 9)==0){
         for(int i = 0; i<PINS; i++){
             char *state = pinstate[i]==1 ? "output" : "input";
-            printf("pin %d: %s\n", i, state);
+            // printf("pin %d: %s\n", i, state);
+            char each[2] = {0x10, 0xFF};
+            raw_uart_write(UART_NUM_0, each, 2);
+            raw_uart_write(UART_NUM_0, state, strlen(state));
         }
     }
     else{
         int pin = get_number(command);
         int ret = get_pin_dir(pin);
         char *state = ret ? "output" : "input";
-        printf("%s\n", state);
+        // printf("%s\n", state);
+        raw_uart_write(UART_NUM_0, state, strlen(state));
     }
+
+    end_signal();
     
     #undef vTaskDelete
     vTaskDelete(NULL);
@@ -450,7 +437,6 @@ void command_read(void *pvParameter){
             printf("nah\n");
         }
         else if(memcmp(buff, "pindir", 6)==0){
-            // pindir(buff);
             #undef xTaskCreate
             xTaskCreate(pindir, "pindir", 2048, buff, MAX_TASK_P+1, NULL);
             #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
@@ -464,12 +450,9 @@ void command_read(void *pvParameter){
             #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
         }
         else if(memcmp(buff, "ipconfig", 8)==0){
-            // wifi_status(buff);
             #undef xTaskCreate
-            // ipconfig_info();
             xTaskCreate(ipconfig_info, "ipconfig", 4096, NULL, MAX_TASK_P+1, NULL);
             #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
-            // ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, NULL));
         }
 
     }
@@ -500,7 +483,6 @@ void shell_init(){
     log_index = 0;
     init_uart();
     init_wifi();
-    wifi_init_sta(); // temporary
     #undef xTaskCreate
     xTaskCreate(&command_read, "command_read", 4096, NULL, 5, NULL);
     #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
