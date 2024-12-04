@@ -17,6 +17,8 @@ uart_ed = '7369676d61'
 serial_output = ""
 cmd_semaphore = 0
 
+stop = threading.Event()
+
 
 def uart_read(port='COM4', baudrate=115200, timeout=0.01):
     global cmd_semaphore
@@ -86,10 +88,12 @@ def get_serial_logs():
     serial_logs.close()
 
 def port_logs(command):
+    global serial_output
     if '-a' in command:
         # display all
         print("cringe")
 
+    serial_output = ""
     return
         
 
@@ -97,9 +101,20 @@ def task_list():
     global serial_output
     print("running task list")
     display = serial_output
+    display = display.replace(uart_op, '')
+    display = display.replace(uart_ed, '0a')
+    display = bytes.fromhex(display).decode('ascii')
     print(display)
+    serial_output = ""
 
-command_list = ['port logs', 'task list']
+def ipconfig():
+    global serial_output
+    print("running ipconfig")
+    display = serial_output
+    print(display)
+    serial_output = ""
+
+command_list = ['port logs', 'task list', 'ipconfig']
 
 def interface():
     global cmd_semaphore
@@ -119,6 +134,9 @@ def interface():
                     if i in command or command in i:
                         found = 1
                         break
+                if found: print("valid command found")
+                else: print("no valid command found")
+                # if len(serial_output)==0: cmd_semaphore = 1
                 while cmd_semaphore!=1 and found==1:
                     pass
                 if cmd_semaphore==1:
@@ -127,10 +145,13 @@ def interface():
                         port_logs(command)
                     elif 'task list' in command.lower():
                         task_list()
+                    elif 'ipconfig' in command.lower():
+                        ipconfig()
 
                     cmd_semaphore = 0
         except KeyboardInterrupt:
             print("Quitting")
+            stop.set()
             return
             
 
@@ -139,6 +160,8 @@ read_thread = threading.Thread(target=uart_read)
 
 write_thread.start()
 read_thread.start()
+
+stop.set()
 
 write_thread.join()
 read_thread.join()
