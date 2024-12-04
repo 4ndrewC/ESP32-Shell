@@ -6,6 +6,7 @@ A shell to interact with the current state of the hardware on the ESP32 microcon
 - Get pin direction 
 - Logging tasks
   -  List all currently running tasks
+- Check connected WiFi configuration
 
 
 
