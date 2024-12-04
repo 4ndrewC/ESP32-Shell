@@ -317,9 +317,9 @@ void task_list(void *pvParameter){
     for(int i = 0; i<MAX_TASKS; i++){
         if(!task_active[i]) continue;
         // ESP_LOGI("TAG", "%s", task_log[i].task_name);
-        char each[2] = {0x10, 0xFF};
-        raw_uart_write(UART_NUM_0, each, 2);
+        char newline[1] = {0x0A};
         raw_uart_write(UART_NUM_0, task_log[i].task_name, strlen(task_log[i].task_name));
+        raw_uart_write(UART_NUM_0, newline, 1);
     }
     // end sequence
     end_signal();
@@ -351,6 +351,7 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base,
 }
 
 void ipconfig_info(void *pvParameters){
+    start_signal();
     esp_netif_ip_info_t ip_info;
     esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF"); // Get the default Wi-Fi station interface
 
@@ -371,7 +372,7 @@ void ipconfig_info(void *pvParameters){
     } else {
         ESP_LOGE("TAG", "Failed to retrieve Wi-Fi configuration");
     }
-    
+    end_signal();
     #undef vTaskDelete
     vTaskDelete(NULL);
     #define vTaskDelete(task) delete_task(task)
