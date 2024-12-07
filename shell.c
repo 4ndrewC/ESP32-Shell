@@ -10,6 +10,8 @@ SemaphoreHandle_t write_logs_semaphore;
 char start_msg[7] = {0x73, 0x6b, 0x69, 0x62, 0x69, 0x64, 0x69};
 char end_msg[5] = {0x73, 0x69, 0x67, 0x6d, 0x61};
 
+char sep[1] = {0x7C}; // |
+
 
 /* storing serial data */
 void store(uint32_t compressed[], void *input, int length){
@@ -278,7 +280,7 @@ void create_task(TaskFunction_t pxTaskCode, const char * const pcName, const con
     ESP_LOGI("TAG", "Task %s created through pseudo function\n", pcName);
     int next = get_next_task(); // get next available task index
     task_log[next].task_name = pcName;
-    // task_log[next].stack_depth = usStackDepth;
+    task_log[next].stack_depth = usStackDepth;
     task_log[next].priority = uxPriority;
     task_active[next] = 1;
     if(next>task_index) task_index = next;
@@ -316,9 +318,21 @@ void task_list(void *pvParameter){
     // send all active tasks
     for(int i = 0; i<MAX_TASKS; i++){
         if(!task_active[i]) continue;
-        // ESP_LOGI("TAG", "%s", task_log[i].task_name);
+        // ESP_LOGI("TAG", "%u", PRIu32, task_log[i].stack_depth);
         char newline[1] = {0x0A};
+        char *stack_pref = "stack_depth";
+        char *prio_pref = "priority";
+        char stack_depth[5];
+        char priority[3];
+        sprintf(stack_depth, "%lu", task_log[i].stack_depth);
+        sprintf(priority, "%lu", task_log[i].priority);
         raw_uart_write(UART_NUM_0, task_log[i].task_name, strlen(task_log[i].task_name));
+        raw_uart_write(UART_NUM_0, sep, 1);
+        // raw_uart_write(UART_NUM_0, stack_pref, strlen(stack_pref));
+        raw_uart_write(UART_NUM_0, stack_depth, strlen(stack_depth));
+        // raw_uart_write(UART_NUM_0, prio_pref, strlen(prio_pref));
+        raw_uart_write(UART_NUM_0, sep, 1);
+        raw_uart_write(UART_NUM_0, priority, strlen(priority));
         raw_uart_write(UART_NUM_0, newline, 1);
     }
     // end sequence
