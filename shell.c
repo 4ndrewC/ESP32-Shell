@@ -11,10 +11,13 @@ char start_msg[7] = {0x73, 0x6b, 0x69, 0x62, 0x69, 0x64, 0x69};
 char end_msg[5] = {0x73, 0x69, 0x67, 0x6d, 0x61};
 
 char sep[1] = {0x7C}; // |
+char newline[1] = {0xFF};
 
 
 /* storing serial data */
 void store(uint32_t compressed[], void *input, int length){
+    int mod = length%4!=0? length%4 : 4;
+    length = length+(4-mod);
     uint32_t *data = (uint32_t *)input;
     int div = 4/sizeof(input[0]);
     for(int i = 0; i<length/div; i++){
@@ -62,13 +65,6 @@ void write_serial_logs(void *pvParameter){
         
         // header for serial log uart data
         int index = 0;
-        // if(i==0){
-        //     uart_buff[index++] = 0x33;
-        //     uart_buff[index++] = 0x44;
-        //     uart_buff[index++] = 0x55;
-        // }
-        uart_buff[index++] = 0x10;
-        uart_buff[index++] = 0xFF;
 
         uint8_t port;
         switch(port_actions[i].port){
@@ -90,35 +86,25 @@ void write_serial_logs(void *pvParameter){
         // comm = port_actions[i].comm == UART ? "uart" : (port_actions[i].comm == I2C ? "i2c" : "spi");
         uint8_t comm = port_actions[i].comm == UART ? 0: (port_actions[i].comm == I2C ? 1: 2);
         uint8_t length = port_actions[i].length;
-        // length = (uint8_t)sizeof(port_actions[i].buff);
-        
+
         uint8_t *data = (uint8_t *)malloc(port_actions[i].length*sizeof(uint8_t));
         data = (uint8_t *)port_actions[i].buff;
         uart_buff[index++] = length;
+        uart_buff[index++] = sep[0];
         uart_buff[index++] = port;
+        uart_buff[index++] = sep[0];
         uart_buff[index++] = io;
+        uart_buff[index++] = sep[0];
         uart_buff[index++] = comm;
-        // while(*comm!='\0'){
-        //     uart_buff[index++] = *comm;
-        //     comm++;
-        // } 
-        // if(index==6) uart_buff[index++] = '0';
+        uart_buff[index++] = sep[0];
+
+        int mod = length%4!=0? length%4 : 4;
+        length = length+(4-mod);
         for(int i = 0; i<length; i++){
             uart_buff[index++] = data[i];
         }
-        // ending sequence: 6f 70 70 61 69
-        uart_buff[index++] = 0x6F;
-        uart_buff[index++] = 0x70;
-        uart_buff[index++] = 0x70;
-        uart_buff[index++] = 0x61;
-        uart_buff[index++] = 0x69;
 
-        // if(i==log_index-1){
-        //     uart_buff[index++] = 0x66;
-        //     uart_buff[index++] = 0x77;
-        //     uart_buff[index++] = 0x88;
-        //     uart_buff[index++] = 0x99;
-        // }
+        uart_buff[index++] = newline[0];
 
         #undef uart_write_bytes
         uart_write_bytes(UART_NUM_0, uart_buff, length+20);
@@ -189,9 +175,10 @@ int uart_write(uart_port_t s_port, void *buff, int length){
     port_actions[log_index].comm = UART;
     
     // this is to make sure the data sent fits perfectly into multiples of 32-bits
+    port_actions[log_index].length = length;
     int mod = length%4!=0? length%4 : 4;
-    port_actions[log_index].length = length+(4-mod);
-
+    length = length+(4-mod);
+    
     store(port_actions[log_index].buff, data, port_actions[log_index].length);
 
     log_index++;
@@ -319,7 +306,6 @@ void task_list(void *pvParameter){
     for(int i = 0; i<MAX_TASKS; i++){
         if(!task_active[i]) continue;
         // ESP_LOGI("TAG", "%u", PRIu32, task_log[i].stack_depth);
-        char newline[1] = {0x0A};
         char *stack_pref = "stack_depth";
         char *prio_pref = "priority";
         char stack_depth[5];
@@ -349,42 +335,48 @@ void task_list(void *pvParameter){
 
 // --------------- skibidi wifi ----------------
 
-void wifi_event_handler(void* arg, esp_event_base_t event_base,
-                        int32_t event_id, void* event_data) {
-    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        ESP_LOGI("TAG", "Wi-Fi started, connecting...");
-        esp_wifi_connect();
-    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        ESP_LOGW("TAG", "Disconnected, reconnecting...");
-        esp_wifi_connect();
-    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
-        ESP_LOGI("TAG", "Device IP: " IPSTR, IP2STR(&event->ip_info.ip));
-        ESP_LOGI("TAG", "Gateway: " IPSTR, IP2STR(&event->ip_info.gw));
-    }
-}
+
 
 void ipconfig_info(void *pvParameters){
     start_signal();
     esp_netif_ip_info_t ip_info;
     esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF"); // Get the default Wi-Fi station interface
-
+    // raw_uart_write(UART_NUM_0, "balls", strlen("balls"));
     if (esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
-        ESP_LOGI("TAG", "Device IP Address: " IPSTR, IP2STR(&ip_info.ip));
-        ESP_LOGI("TAG", "Gateway IP Address: " IPSTR, IP2STR(&ip_info.gw));
-        ESP_LOGI("TAG", "Netmask: " IPSTR, IP2STR(&ip_info.netmask));
+        char deviceip[100], gatewayip[100], netmask[100];
+        sprintf(deviceip, "Device IP Address: " IPSTR, IP2STR(&ip_info.ip));
+        sprintf(gatewayip, "Gateway IP Address: " IPSTR, IP2STR(&ip_info.gw));
+        sprintf(netmask, "Netmask: " IPSTR, IP2STR(&ip_info.netmask));
+
+        raw_uart_write(UART_NUM_0, deviceip, strlen(deviceip));
+        raw_uart_write(UART_NUM_0, newline, 1);
+        raw_uart_write(UART_NUM_0, gatewayip, strlen(gatewayip));
+        raw_uart_write(UART_NUM_0, newline, 1);
+        raw_uart_write(UART_NUM_0, netmask, strlen(netmask));
+        raw_uart_write(UART_NUM_0, newline, 1);
+        // ESP_LOGI("TAG", "%s", deviceip);
+        // ESP_LOGI("TAG", "Gateway IP Address: " IPSTR, IP2STR(&ip_info.gw));
+        // ESP_LOGI("TAG", "Netmask: " IPSTR, IP2STR(&ip_info.netmask));
     } else {
-        ESP_LOGE("TAG", "Failed to get IP info.");
+        char *failed = "Failed to get IP info";
+        // ESP_LOGE("TAG", "Failed to get IP info.");
+        raw_uart_write(UART_NUM_0, failed, strlen(failed));
+        raw_uart_write(UART_NUM_0, newline, 1);
     }
     wifi_config_t wifi_config;
     if (esp_wifi_get_config(WIFI_IF_STA, &wifi_config) == ESP_OK) {
         char ssid[33]; // SSID max length is 32 characters + null terminator
         strncpy(ssid, (char *)wifi_config.sta.ssid, sizeof(ssid) - 1);
         ssid[sizeof(ssid) - 1] = '\0'; // Ensure null termination
-        
-        ESP_LOGI("TAG", "Connected SSID: %s", ssid);
+        char SSID[100];
+        sprintf(SSID, "Connected SSID: %s", ssid);
+        // sprintf(SSID, "Connected SSID: ");
+        raw_uart_write(UART_NUM_0, SSID, strlen(SSID));
+        // ESP_LOGI("TAG", "Connected SSID: %s", ssid);
     } else {
-        ESP_LOGE("TAG", "Failed to retrieve Wi-Fi configuration");
+        char *failed = "Failed to retrieve Wi-Fi configuration";
+        raw_uart_write(UART_NUM_0, failed, strlen(failed));
+        // ESP_LOGE("TAG", "Failed to retrieve Wi-Fi configuration");
     }
     end_signal();
     #undef vTaskDelete
@@ -392,9 +384,9 @@ void ipconfig_info(void *pvParameters){
     #define vTaskDelete(task) delete_task(task)
 }
 
-void wifi_status(char *command){
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, NULL));
-}
+// void wifi_status(char *command){
+//     ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, NULL));
+// }
 
 // --------------------------------------------
 /* tracks pin direction per enable/disable */
