@@ -20,6 +20,7 @@ cmd_semaphore = 0
 newline = 'ff'
 
 stop = threading.Event()
+kill = 0
 
 comms = ['UART', 'I2C', 'SPI']
 io = ['Output', 'Input']
@@ -69,11 +70,12 @@ def generate_serial_logs(content):
 def uart_read(port='COM4', baudrate=115200, timeout=0.01):
     global cmd_semaphore
     global serial_output
+    global kill
     message = ""
     logs = open('D:\Andrew\Programming\esp32\cli\serial_logs.out', 'w')
     logs.write("")
     logs.close()
-    while True:
+    while kill!=1:
         try:
             temp = ""
             debug = 0
@@ -130,7 +132,6 @@ def get_serial_logs():
     if len(serial_output)==0: return
     # print("piece", piece)   
     serial_output = serial_output.replace('a5', '')
-    if 'fffffffffffffffffffff' in serial_output: return
     outer = serial_output.split(newline)
     res = [[] for x in range(len(outer)-1)]
     for i in range(len(outer)-1):
@@ -190,48 +191,61 @@ def ipconfig():
     global serial_output
     print("running ipconfig")
     display = serial_output
-    print(display)
+    # print(display)
+    # print('------------')
+    res = display.replace('a5', '').split('ff')
+    # print(res)
+    for i in res:
+        print(conv_bytes(i))
     # serial_output = ""
 
 command_list = ['port logs', 'task list', 'ipconfig']
 
 def interface():
     global cmd_semaphore
+    global kill
     print("Welcome to the ESP-Shell! Type 'exit' to quit.")
     while True:
         try:
             command = input("ESP-Shell> ") 
-            if command.lower() == 'quit':
-                print("Quitting Shell")
-                break
+            try:
+                if command.lower() == 'quit':
+                    print("Quitting Shell")
+                    kill = 1
+                    break
 
-            else:
-                # send command through uart
-                cmd_semaphore = 0
-                ser.write(command.encode('utf-8'))
-                found = 0
-                for i in command_list:
-                    if i in command or command in i:
-                        found = 1
-                        break
-                if found: print("valid command found")
-                else: print("no valid command found")
-                # if len(serial_output)==0: cmd_semaphore = 1
-                while cmd_semaphore!=1 and found==1:
-                    pass
-                found = 0
-                if cmd_semaphore==1:
-                    if 'port logs' in command.lower():
-                        port_logs(command)
-                    elif 'task list' in command.lower():
-                        task_list()
-                    elif 'ipconfig' in command.lower():
-                        ipconfig()
-
+                else:
+                    # send command through uart
                     cmd_semaphore = 0
+                    ser.write(command.encode('utf-8'))
+                    found = 0
+                    for i in command_list:
+                        if i in command or command in i:
+                            found = 1
+                            break
+                    if found: print("valid command found")
+                    else: print("no valid command found")
+                    # if len(serial_output)==0: cmd_semaphore = 1
+                    while cmd_semaphore!=1 and found==1:
+                        pass
+                    found = 0
+                    if cmd_semaphore==1:
+                        if 'port logs' in command.lower():
+                            port_logs(command)
+                        elif 'task list' in command.lower():
+                            task_list()
+                        elif 'ipconfig' in command.lower():
+                            ipconfig()
+
+                        cmd_semaphore = 0
+            except KeyboardInterrupt:
+                print("Quitting Shell")
+                kill = 1
+                return
         except KeyboardInterrupt:
-            print("Quitting")
+            print("Quitting Shell")
             stop.set()
+            kill = 1
             return
             
 
