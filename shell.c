@@ -153,14 +153,28 @@ void port_logs(){
     }
 #endif
 
-// ----------------- SERIAL LOGGING -----------------
-
+// ------------ raw undefined functions --------------- 
 int raw_uart_write(uart_port_t s_port, void *buff, int length){
     #undef uart_write_bytes
     int ret = uart_write_bytes(s_port, (const uint8_t *)buff, length);
     #define uart_write_bytes(s_port, buff, length) uart_write(s_port, buff, length)
     return ret;
 }
+
+void raw_create_task(TaskFunction_t pxTaskCode, const char* pcName, const uint32_t usStackDepth, void *const pvParameters, UBaseType_t uxPriority, TaskHandle_t *const pxCreatedTask){
+    #undef xTaskCreate
+    xTaskCreate(pxTaskCode, pcName, usStackDepth, pvParameters, uxPriority, pxCreatedTask);
+    #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
+}
+
+void raw_delete_task(TaskHandle_t task){
+    #undef vTaskDelete
+    vTaskDelete(task);
+    #define vTaskDelete(task) delete_task(task)
+}
+
+// ----------------- SERIAL LOGGING -----------------
+
 
 int uart_write(uart_port_t s_port, void *buff, int length){
     
@@ -272,9 +286,7 @@ void create_task(TaskFunction_t pxTaskCode, const char * const pcName, const con
     task_active[next] = 1;
     if(next>task_index) task_index = next;
 
-    #undef xTaskCreate
-    xTaskCreate(pxTaskCode, pcName, usStackDepth, pvParameters, uxPriority, pxCreatedTask);
-    #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
+    raw_create_task(pxTaskCode, pcName, usStackDepth, pvParameters, uxPriority, pxCreatedTask);
 }
 
 void delete_task(TaskHandle_t task){
@@ -384,9 +396,6 @@ void ipconfig_info(void *pvParameters){
     #define vTaskDelete(task) delete_task(task)
 }
 
-// void wifi_status(char *command){
-//     ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, NULL));
-// }
 
 // --------------------------------------------
 /* tracks pin direction per enable/disable */
