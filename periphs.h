@@ -30,7 +30,7 @@ typedef enum {
 
 typedef struct{
 
-    uart_port_t port;
+    uint8_t port;
     uint8_t io;
     comm_type comm;
     uint8_t length;
@@ -40,7 +40,7 @@ typedef struct{
 
 typedef struct {
     char *task_name;
-    // uint32_t stack_depth;
+    uint32_t stack_depth;
     unsigned long priority;
 } task_log_t;
 
