@@ -143,7 +143,7 @@ def get_serial_logs():
             res[i][1] = int(res[i][1], 16)
             res[i][2] = int(res[i][2], 16)
             res[i][3] = int(res[i][3], 16)
-            res[i][4] = conv_bytes(res[i][4])[:res[i][0]]
+            # res[i][4] = conv_bytes(res[i][4])[:res[i][0]]
         except:
             print(serial_output)
             print('----------------')
