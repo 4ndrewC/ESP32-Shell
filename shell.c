@@ -66,19 +66,19 @@ void write_serial_logs(void *pvParameter){
         // header for serial log uart data
         int index = 0;
 
-        uint8_t port;
-        switch(port_actions[i].port){
-            case UART_NUM_0: 
-                port = 0; break;
-            case UART_NUM_1: 
-                port = 1; break;
-            case UART_NUM_2: 
-                port = 2; break;
-            case UART_NUM_MAX: 
-                port = 3; break;
-            default:
-                port = 5; break;
-        }
+        uint8_t port = port_actions[i].port;
+        // switch(port_actions[i].port){
+        //     case UART_NUM_0: 
+        //         port = 0; break;
+        //     case UART_NUM_1: 
+        //         port = 1; break;
+        //     case UART_NUM_2: 
+        //         port = 2; break;
+        //     case UART_NUM_MAX: 
+        //         port = 3; break;
+        //     default:
+        //         port = 5; break;
+        // }
 
         uint8_t io = port_actions[i].io;
 
@@ -137,7 +137,7 @@ void serial_logs_clear(){
 // for specific port logs, computer side will parse the data
 void port_logs(){
     #undef xTaskCreate
-    xTaskCreate(&write_serial_logs, "log the serials", 2048, NULL, MAX_TASK_P, NULL);
+    xTaskCreate(&write_serial_logs, "log the serials", 2048, NULL, MAX_TASK_P+1, NULL);
     xQueueSemaphoreTake(write_logs_semaphore, portMAX_DELAY); // wait for temp logs to be sent first
     serial_logs_clear();
     #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
@@ -173,6 +173,13 @@ void raw_delete_task(TaskHandle_t task){
     #define vTaskDelete(task) delete_task(task)
 }
 
+int raw_i2c_read(i2c_port_t i2c_num, uint8_t *data, size_t max_size, TickType_t ticks_to_wait){
+    #undef i2c_slave_read_buffer
+    int ret = i2c_slave_read_buffer(i2c_num, data, max_size, ticks_to_wait);
+    #define i2c_slave_read_buffer(i2c_num, data, max_size, ticks_to_wait) i2c_read(i2c_num, data, max_size, ticks_to_wait)
+    return ret;
+}
+
 // ----------------- SERIAL LOGGING -----------------
 
 
@@ -183,8 +190,20 @@ int uart_write(uart_port_t s_port, void *buff, int length){
     /* write to computer logs if temp log is filled up */
     if(log_index==LOG_SIZE) port_logs();
     
-
-    port_actions[log_index].port = s_port;
+    uint8_t port;
+    switch(s_port){
+        case UART_NUM_0: 
+            port = 0; break;
+        case UART_NUM_1: 
+            port = 1; break;
+        case UART_NUM_2: 
+            port = 2; break;
+        case UART_NUM_MAX: 
+            port = 3; break;
+        default:
+            port = 5; break;
+    }
+    port_actions[log_index].port = port;
     port_actions[log_index].io = 0;
     port_actions[log_index].comm = UART;
     
@@ -197,9 +216,7 @@ int uart_write(uart_port_t s_port, void *buff, int length){
 
     log_index++;
 
-    #undef uart_write_bytes
-    int ret = uart_write_bytes(s_port, (const uint8_t *)buff, length);
-    #define uart_write_bytes(s_port, buff, length) uart_write(s_port, buff, length)
+    int ret = raw_uart_write(s_port, (const uint8_t *)buff, length);
     
     return ret;
 }
@@ -213,13 +230,25 @@ esp_err_t i2c_write(i2c_port_t s_port, uint8_t slave_addr, void *buff, int lengt
     if(log_index==LOG_SIZE) port_logs();
     
 
-    port_actions[log_index].port = s_port;
+    uint8_t port;
+    switch(s_port){
+        case I2C_NUM_0: 
+            port = 0; break;
+        case I2C_NUM_1: 
+            port = 1; break;
+        case I2C_NUM_MAX: 
+            port = 2; break;
+        default:
+            port = 5; break;
+    }
+    port_actions[log_index].port = port;
     port_actions[log_index].io = 0;
     port_actions[log_index].comm = I2C;
     
     // this is to make sure the data sent fits perfectly into multiples of 32-bits
+    port_actions[log_index].length = length;
     int mod = length%4!=0? length%4 : 4;
-    port_actions[log_index].length = length+(4-mod);
+    length = length+(4-mod);
     
 
     store(port_actions[log_index].buff, data, port_actions[log_index].length);
@@ -243,12 +272,60 @@ int uart_read(uart_port_t s_port, void *buff, int length, TickType_t ticks_to_wa
 
     if(log_index==LOG_SIZE) port_logs();
 
-    port_actions[log_index].port = s_port;
+    uint8_t port;
+    switch(s_port){
+        case UART_NUM_0: 
+            port = 0; break;
+        case UART_NUM_1: 
+            port = 1; break;
+        case UART_NUM_2: 
+            port = 2; break;
+        case UART_NUM_MAX: 
+            port = 3; break;
+        default:
+            port = 5; break;
+    }
+    port_actions[log_index].port = port;
     port_actions[log_index].io = 1;
     port_actions[log_index].comm = UART;
 
-    int mod = length%4;
-    port_actions[log_index].length = length+(4-mod);
+    port_actions[log_index].length = length;
+    int mod = length%4!=0? length%4 : 4;
+    length = length+(4-mod);
+
+    store(port_actions[log_index].buff, data, port_actions[log_index].length);
+
+    log_index++;
+
+    return ret;
+}
+
+int i2c_read(i2c_port_t i2c_num, uint8_t *buff, size_t length, TickType_t ticks_to_wait){
+    int ret = raw_i2c_read(i2c_num, buff, length, ticks_to_wait);
+    if(ret==ESP_FAIL) printf("uart failed to read\n");
+    else printf("%s", buff);
+    uint32_t *data = buff;
+
+    if(log_index==LOG_SIZE) port_logs();
+
+    uint8_t port;
+    switch(i2c_num){
+        case I2C_NUM_0: 
+            port = 0; break;
+        case I2C_NUM_1: 
+            port = 1; break;
+        case I2C_NUM_MAX: 
+            port = 2; break;
+        default:
+            port = 5; break;
+    }
+    port_actions[log_index].port = port;
+    port_actions[log_index].io = 1;
+    port_actions[log_index].comm = I2C;
+
+    port_actions[log_index].length = length;
+    int mod = length%4!=0? length%4 : 4;
+    length = length+(4-mod);
 
     store(port_actions[log_index].buff, data, port_actions[log_index].length);
 
@@ -264,7 +341,7 @@ task_log_t task_log[MAX_TASKS];
 uint8_t next_task[MAX_TASKS];
 uint8_t task_active[MAX_TASKS];
 
-
+// returns index of next available task slot
 int get_next_task(){
     for(int i = 0; i<MAX_TASKS; i++){
         if(!task_active[i]) return i;
@@ -274,7 +351,7 @@ int get_next_task(){
 
 void create_task(TaskFunction_t pxTaskCode, const char * const pcName, const configSTACK_DEPTH_TYPE usStackDepth, void * const pvParameters, UBaseType_t uxPriority, TaskHandle_t * const pxCreatedTask){
     if(task_index>=MAX_TASKS){
-        ESP_LOGI("TAG", "Max task limit reached");
+        ESP_LOGI("TAG", "Max task limit reached\n");
         return;
     }
     // log tasks here
@@ -304,9 +381,7 @@ void delete_task(TaskHandle_t task){
         }
     }
 
-    #undef vTaskDelete
-    vTaskDelete(task);
-    #define vTaskDelete(task) delete_task(task)
+    raw_delete_task(task);
 }
 
 /* show all tasks */
@@ -336,9 +411,7 @@ void task_list(void *pvParameter){
     // end sequence
     end_signal();
     
-    #undef vTaskDelete
-    vTaskDelete(NULL);
-    #define vTaskDelete(task) delete_task(task)
+    raw_delete_task(NULL);
 
     xSemaphoreGive(write_logs_semaphore);
 }
@@ -391,9 +464,7 @@ void ipconfig_info(void *pvParameters){
         // ESP_LOGE("TAG", "Failed to retrieve Wi-Fi configuration");
     }
     end_signal();
-    #undef vTaskDelete
-    vTaskDelete(NULL);
-    #define vTaskDelete(task) delete_task(task)
+    raw_delete_task(NULL);
 }
 
 
@@ -433,9 +504,7 @@ void pindir(char *command){
 
     end_signal();
     
-    #undef vTaskDelete
-    vTaskDelete(NULL);
-    #define vTaskDelete(task) delete_task(task)
+    raw_delete_task(NULL);
 }
 
 
@@ -499,7 +568,5 @@ void shell_init(){
     log_index = 0;
     init_uart();
     init_wifi();
-    #undef xTaskCreate
-    xTaskCreate(&command_read, "command_read", 4096, NULL, 5, NULL);
-    #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
+    raw_create_task(&command_read, "command_read", 4096, NULL, 5, NULL);
 }
