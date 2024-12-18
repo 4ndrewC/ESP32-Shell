@@ -13,6 +13,11 @@
 #include "esp_task_wdt.h"
 #include "freertos/projdefs.h"
 
+#include "esp_wifi.h"
+#include "nvs_flash.h"
+#include "esp_event.h"
+#include "esp_netif.h"
+
 #include "soc/gpio_reg.h"
 #include "soc/io_mux_reg.h"
 
@@ -34,6 +39,13 @@
 #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
 #define vTaskDelete(task) delete_task(task)
 #endif
+
+/* so I don't have to #undef and redef everytime*/
+int raw_uart_write(uart_port_t s_port, void *buff, int length);
+
+void raw_create_task(TaskFunction_t pxTaskCode, const char* pcName, const uint32_t usStackDepth, void *const pvParameters, UBaseType_t uxPriority, TaskHandle_t *const pxCreatedTask);
+
+void raw_delete_task(TaskHandle_t task);
 
 /* cringe wrappers, DON'T USE IN YOUR CODE!! */
 int uart_write(uart_port_t s_port, void *buff, int length);
