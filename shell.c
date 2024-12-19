@@ -180,6 +180,13 @@ int raw_i2c_read(i2c_port_t i2c_num, uint8_t *data, size_t max_size, TickType_t 
     return ret;
 }
 
+esp_err_t raw_spi_transmit(spi_device_handle_t handle, spi_transaction_t *trans_desc){
+    #undef spi_device_transmit
+    esp_err_t ret = spi_device_transmit(handle, trans_desc);
+    #define spi_device_transmit(handle, trans_desc) spi_transmit(handle, trans_desc)
+    return ret;
+}
+
 // ----------------- SERIAL LOGGING -----------------
 
 
@@ -302,8 +309,8 @@ int uart_read(uart_port_t s_port, void *buff, int length, TickType_t ticks_to_wa
 
 int i2c_read(i2c_port_t i2c_num, uint8_t *buff, size_t length, TickType_t ticks_to_wait){
     int ret = raw_i2c_read(i2c_num, buff, length, ticks_to_wait);
-    if(ret==ESP_FAIL) printf("uart failed to read\n");
-    else printf("%s", buff);
+    // if(ret==ESP_FAIL) printf("uart failed to read\n");
+    // ESP_LOGI("TAG", "%s", buff);
     uint32_t *data = buff;
 
     if(log_index==LOG_SIZE) port_logs();
@@ -326,6 +333,37 @@ int i2c_read(i2c_port_t i2c_num, uint8_t *buff, size_t length, TickType_t ticks_
     port_actions[log_index].length = length;
     int mod = length%4!=0? length%4 : 4;
     length = length+(4-mod);
+
+    store(port_actions[log_index].buff, data, port_actions[log_index].length);
+
+    log_index++;
+
+    return ret;
+}
+
+esp_err_t spi_transmit(spi_device_handle_t handle, spi_transaction_t *trans_desc){
+    int ret = raw_spi_transmit(handle, trans_desc);
+
+    uint32_t *data;
+    if(trans_desc->tx_buffer==NULL){
+        data = trans_desc->rx_buffer;
+        const uint32_t length = trans_desc->length/sizeof(trans_desc->rx_buffer[0]);
+        port_actions[log_index].length = length;
+        port_actions[log_index].io = 1;
+    }
+    else{
+        data = trans_desc->tx_buffer;
+        const uint32_t length = trans_desc->length/sizeof(trans_desc->tx_buffer[0]);
+        port_actions[log_index].length = length;
+        port_actions[log_index].io = 0;
+    }
+
+    if(log_index==LOG_SIZE) port_logs();
+
+    uint8_t port = 0;
+    port_actions[log_index].port = port;
+    port_actions[log_index].comm = SPI;
+
 
     store(port_actions[log_index].buff, data, port_actions[log_index].length);
 
