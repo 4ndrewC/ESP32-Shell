@@ -8,6 +8,7 @@
 #include "driver/gpio.h"
 #include "driver/uart.h"
 #include "driver/i2c.h"
+#include "driver/spi_master.h"
 #include "esp_system.h"
 #include "esp_log.h"
 #include "esp_task_wdt.h"
@@ -34,6 +35,7 @@
 #define uart_write_bytes(s_port, buff, length) uart_write(s_port, buff, length)
 #define i2c_master_write_to_device(s_port, slave_addr, data, length, ticks_to_wait) i2c_write(s_port, slave_addr, data, length, ticks_to_wait);
 #define i2c_slave_read_buffer(i2c_num, data, max_size, ticks_to_wait) i2c_read(i2c_num, data, max_size, ticks_to_wait)
+#define spi_device_transmit(handle, trans_desc) spi_transmit(handle, trans_desc)
 #endif
 
 #if (log_tasks == 1)
@@ -48,6 +50,8 @@ int raw_i2c_write(i2c_port_t i2c_num, uint8_t device_address, const uint8_t* wri
 
 int raw_i2c_read(i2c_port_t i2c_num, uint8_t *data, size_t max_size, TickType_t ticks_to_wait);
 
+int raw_spi_transmit(spi_device_handle_t handle, spi_transaction_t *trans_desc);
+
 void raw_create_task(TaskFunction_t pxTaskCode, const char* pcName, const uint32_t usStackDepth, void *const pvParameters, UBaseType_t uxPriority, TaskHandle_t *const pxCreatedTask);
 
 void raw_delete_task(TaskHandle_t task);
@@ -58,6 +62,8 @@ int uart_write(uart_port_t s_port, void *buff, int length);
 esp_err_t i2c_write(i2c_port_t s_port, uint8_t slave_addr, void *buff, int length, TickType_t ticks_to_wait);
 
 int i2c_read(i2c_port_t i2c_num, uint8_t *buff, size_t length, TickType_t ticks_to_wait);
+
+esp_err_t spi_transmit(spi_device_handle_t handle, spi_transaction_t *trans_desc);
 
 void create_task(TaskFunction_t pxTaskCode, const char * const pcName, const configSTACK_DEPTH_TYPE usStackDepth, void * const pvParameters, UBaseType_t uxPriority, TaskHandle_t * const pxCreatedTask);
 
