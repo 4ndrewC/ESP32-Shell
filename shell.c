@@ -347,13 +347,17 @@ esp_err_t spi_transmit(spi_device_handle_t handle, spi_transaction_t *trans_desc
     uint32_t *data;
     if(trans_desc->tx_buffer==NULL){
         data = trans_desc->rx_buffer;
-        const uint32_t length = trans_desc->length/sizeof(trans_desc->rx_buffer[0]);
+        const uint32_t length = trans_desc->length/(8*sizeof(trans_desc->rx_buffer[0]));
+        // ESP_LOGI("TAG", "RX BUFFER\n");
+        // ESP_LOGI("TAG", "%d", trans_desc->length/sizeof(trans_desc->rx_buffer[0]));
         port_actions[log_index].length = length;
         port_actions[log_index].io = 1;
     }
     else{
+        // ESP_LOGI("TAG", "TX BUFFER\n");
+        // ESP_LOGI("TAG", "%d", trans_desc->length/(8*sizeof(trans_desc->tx_buffer[0])));
         data = trans_desc->tx_buffer;
-        const uint32_t length = trans_desc->length/sizeof(trans_desc->tx_buffer[0]);
+        const uint32_t length = trans_desc->length/(8*sizeof(trans_desc->tx_buffer[0]));
         port_actions[log_index].length = length;
         port_actions[log_index].io = 0;
     }
@@ -470,7 +474,8 @@ void ipconfig_info(void *pvParameters){
         sprintf(deviceip, "Device IP Address: " IPSTR, IP2STR(&ip_info.ip));
         sprintf(gatewayip, "Gateway IP Address: " IPSTR, IP2STR(&ip_info.gw));
         sprintf(netmask, "Netmask: " IPSTR, IP2STR(&ip_info.netmask));
-
+        // ESP_LOGI("TAG", "%s", deviceip);
+        // printf("that doesnt make sense -> %s", deviceip);
         raw_uart_write(UART_NUM_0, deviceip, strlen(deviceip));
         raw_uart_write(UART_NUM_0, newline, 1);
         raw_uart_write(UART_NUM_0, gatewayip, strlen(gatewayip));
