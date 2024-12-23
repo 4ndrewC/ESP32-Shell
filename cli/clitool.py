@@ -1,6 +1,7 @@
 import sys
 import serial
 import threading
+import re
 
 # global code
 ser = serial.Serial(port="COM4", baudrate=115200, timeout=0.01)
@@ -97,6 +98,8 @@ def uart_read(port='COM4', baudrate=115200, timeout=0.01):
                     message = message[parse_end+8:]
                     debug = 5
                     get_serial_logs()
+                    # print(serial_output.replace('a5','').split('7c'))
+                    # re.split('7c', 'ff', serial_output)
                     # print("made it past")
                     debug = 6
                     # print("made it to the end")
@@ -163,17 +166,35 @@ def get_serial_logs():
 
 def port_logs(command):
     global serial_output
+    read_logs = open('D:\Andrew\Programming\esp32\cli\serial_logs.out', 'r')
+    output = read_logs.read()
     if '-a' in command:
         # display all
-        read_logs = open('D:\Andrew\Programming\esp32\cli\serial_logs.out', 'r')
-        output = read_logs.read()
         print(output)
+    else:
+        count = ''
+        i = len(command)-1
+        while command[i].isdigit():
+            count = command[i]+count
+            i-=1
+        count = int(count)
+        print(count)
+        output = output.split('\n')
+        # print(output)
+        i = len(output)-2
+        ind = 0
+        while ind<min(count, len(output)):
+            print(output[i])
+            i-=1
+            ind+=1
+
+    read_logs.close()
     return
         
 
 def task_list():
     global serial_output
-    print("running task list")
+    # print("running task list")
     columns = ["Task", "Stack Size", "Priority"]
     display = serial_output
     rows = display.split(newline)
@@ -189,7 +210,7 @@ def task_list():
 
 def ipconfig():
     global serial_output
-    print("running ipconfig")
+    # print("running ipconfig")
     display = serial_output
     # print(display)
     # print('------------')
@@ -220,11 +241,13 @@ def interface():
                     ser.write(command.encode('utf-8'))
                     found = 0
                     for i in command_list:
-                        if i in command or command in i:
+                        if i in command:
                             found = 1
                             break
                     if found: print("valid command found")
-                    else: print("no valid command found")
+                    else: 
+                        print("no valid command found")
+                        continue
                     # if len(serial_output)==0: cmd_semaphore = 1
                     while cmd_semaphore!=1 and found==1:
                         pass
