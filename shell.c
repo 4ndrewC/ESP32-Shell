@@ -435,8 +435,8 @@ void task_list(void *pvParameter){
     for(int i = 0; i<MAX_TASKS; i++){
         if(!task_active[i]) continue;
         // ESP_LOGI("TAG", "%u", PRIu32, task_log[i].stack_depth);
-        char *stack_pref = "stack_depth";
-        char *prio_pref = "priority";
+        // char *stack_pref = "stack_depth";
+        // char *prio_pref = "priority";
         char stack_depth[5];
         char priority[3];
         sprintf(stack_depth, "%lu", task_log[i].stack_depth);
@@ -569,7 +569,7 @@ void command_read(void *pvParameter){
             xTaskCreate(pindir, "pindir", 2048, buff, MAX_TASK_P+1, NULL);
             #define xTaskCreate(task, name, stack_size, parameters, priority, handle) create_task(task, name, stack_size, parameters, priority, handle)
         }
-        else if(memcmp(buff, "port logs", 9)==0){
+        else if(memcmp(buff, "serial", 6)==0){
             port_logs();
         }
         else if(memcmp(buff, "task list", 9)==0){
