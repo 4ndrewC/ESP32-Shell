@@ -1,7 +1,6 @@
 import sys
 import serial
 import threading
-import re
 
 # global code
 ser = serial.Serial(port="COM4", baudrate=115200, timeout=0.01)
@@ -58,7 +57,10 @@ def generate_table(columns, content):
 
 def generate_serial_logs(content):
     ret = ''
+    # print('content: ', content)
     for i in range(len(content)):
+        if len(content[i])<5:
+            continue
         line = '['
         line += comms[int(content[i][3])] + ' '
         line += 'port ' + str(int(content[i][1])) + ' '
@@ -116,7 +118,7 @@ def uart_read(port='COM4', baudrate=115200, timeout=0.01):
                     serial_output = message[parse_start+14:parse_end]
                     debug = 11
                     # print(message)
-                    # print(serial_output)
+                    # print(serial_output.replace('a5', '').split('7c'))
                     message = message[parse_end+10:]
                     debug = 12
                     cmd_semaphore = 1       
@@ -137,18 +139,21 @@ def get_serial_logs():
     serial_output = serial_output.replace('a5', '')
     outer = serial_output.split(newline)
     res = [[] for x in range(len(outer)-1)]
+    if len(res)<=1: return
+    # print(outer)
     for i in range(len(outer)-1):
         # outer[i] = conv_bytes(outer[i])
         try:
-            if len(res)<=1: return
+            # if len(res[i])<5: continue
             res[i] = outer[i].split('7c')
+            if len(res[i])<5: continue
             res[i][0] = int(res[i][0], 16)
             res[i][1] = int(res[i][1], 16)
             res[i][2] = int(res[i][2], 16)
             res[i][3] = int(res[i][3], 16)
             # res[i][4] = conv_bytes(res[i][4])[:res[i][0]]
         except:
-            print(serial_output)
+            print(serial_output.split('ff'))
             print('----------------')
             print(res)
         # print(res[i])
@@ -162,31 +167,61 @@ def get_serial_logs():
     serial_logs = open('D:\Andrew\Programming\esp32\cli\serial_logs.out', 'w')
     serial_logs.write(output)
     serial_logs.close()
-    # serial_output = ""
 
+# serial logs command
+# serial type (optional) length (integer, or -a for all)
+# type and length dont have to be in that order
 def port_logs(command):
     global serial_output
     read_logs = open('D:\Andrew\Programming\esp32\cli\serial_logs.out', 'r')
     output = read_logs.read()
-    if '-a' in command:
-        # display all
-        print(output)
-    else:
-        count = ''
-        i = len(command)-1
-        while command[i].isdigit():
-            count = command[i]+count
-            i-=1
-        count = int(count)
-        print(count)
-        output = output.split('\n')
-        # print(output)
-        i = len(output)-2
-        ind = 0
-        while ind<min(count, len(output)):
+    cl = command.split(' ')
+    # assuming it is valid command:
+    output = output.split('\n')
+    parse_length = -1
+    parse = 'default'
+    if len(cl)==3:
+        length = 1
+        if '-a' not in command:
+            for i in cl[1]:
+                if i.isdigit()==False:
+                    length = 2
+                    break
+        else:
+            if cl[1]=='-a':
+                parse = cl[2]
+            else:
+                parse = cl[1]
+                length = 2
+        if length==2: 
+            parse = cl[1]
+            parse_length = cl[2]
+        else:
+            parse = cl[2]
+            parse_length = cl[1]
+
+        if parse_length == '-a': parse_length = len(output)   
+
+    else: # only 1 parameter, either length or type
+        if cl[1]=='-a' or cl[1][0].isdigit(): parse_length = cl[1]
+        else: parse = cl[1]
+    res = []
+    if parse_length==-1:
+        print("here 1")
+        for i in range(len(output)):
+            if parse in output[i].lower():
+                print(output[i])
+    elif parse=='default':
+        print("here")
+        if parse_length == '-a': parse_length = len(output)
+        else: parse_length = int(parse_length)
+        for i in range(max(len(output)-parse_length-1, 0), len(output)):
             print(output[i])
-            i-=1
-            ind+=1
+    else:
+        print("here 3")
+        for i in range(max(len(output)-parse_length-1, 0), len(output)):
+            if parse in output[i]:
+                print(output[i])    
 
     read_logs.close()
     return
@@ -220,7 +255,7 @@ def ipconfig():
         print(conv_bytes(i))
     # serial_output = ""
 
-command_list = ['port logs', 'task list', 'ipconfig']
+command_list = ['serial', 'task list', 'ipconfig']
 
 def interface():
     global cmd_semaphore
@@ -253,7 +288,7 @@ def interface():
                         pass
                     found = 0
                     if cmd_semaphore==1:
-                        if 'port logs' in command.lower():
+                        if 'serial' in command.lower():
                             port_logs(command)
                         elif 'task list' in command.lower():
                             task_list()
