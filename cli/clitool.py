@@ -25,6 +25,19 @@ kill = 0
 comms = ['UART', 'I2C', 'SPI']
 io = ['Output', 'Input']
 
+# colors
+red_start = '\033[31m'
+red_end = '\033[0m'
+
+green_start = '\033[32m'
+green_end = '\033[0m'
+
+yellow_start = '\033[33m'
+yellow_end = '\033[0m'
+
+blue_start = '\033[34m'
+blue_end = '\033[0m'
+
 def conv_bytes(b):
     return bytes.fromhex(b).decode('ascii')
 
@@ -64,7 +77,9 @@ def generate_serial_logs(content):
         line = '['
         line += comms[int(content[i][3])] + ' '
         line += 'port ' + str(int(content[i][1])) + ' '
-        line += io[int(content[i][2])] + '] '
+        line += io[int(content[i][2])]
+        line += (19-len(line))*' ' + '] '
+        line = yellow_start+line+yellow_end
         line += content[i][4] + '\n'
         ret += line
     return ret
@@ -202,27 +217,27 @@ def port_logs(command):
 
         if parse_length == '-a': parse_length = len(output)   
 
-    else: # only 1 parameter, either length or type
-        if cl[1]=='-a' or cl[1][0].isdigit(): parse_length = cl[1]
-        else: parse = cl[1]
-    res = []
-    if parse_length==-1:
-        print("here 1")
-        for i in range(len(output)):
-            if parse in output[i].lower():
-                print(output[i])
-    elif parse=='default':
-        print("here")
+    else: # only 1 parameter, and it must be length
+        parse_length = cl[1]
+
+    if parse=='default':
         if parse_length == '-a': parse_length = len(output)
         else: parse_length = int(parse_length)
         for i in range(max(len(output)-parse_length-1, 0), len(output)):
             print(output[i])
-    else:
-        print("here 3")
-        for i in range(max(len(output)-parse_length-1, 0), len(output)):
-            if parse in output[i]:
-                print(output[i])    
-
+    elif parse!='default' and parse_length!=-1:
+        # fix this
+        res = []
+        if parse_length == '-a': parse_length = len(output)
+        else: parse_length = int(parse_length)
+        count = 0
+        for i in range(len(output)-1, -1, -1):
+            if count==parse_length: break
+            if parse in output[i].lower():
+                res.append(output[i])   
+                count+=1 
+        while len(res)>0:
+            print(res.pop())
     read_logs.close()
     return
         
